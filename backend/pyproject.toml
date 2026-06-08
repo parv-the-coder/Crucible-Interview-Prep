@@ -1,0 +1,93 @@
+[project]
+name = "crucible"
+version = "0.1.0"
+description = "AI-powered technical interview preparation platform"
+requires-python = ">=3.12"
+dependencies = [
+    # --- web ---
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic[email]>=2.9",
+    "pydantic-settings>=2.6",
+
+    # --- persistence ---
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+
+    # --- security ---
+    "argon2-cffi>=23.1",
+    "pyjwt[crypto]>=2.10",
+
+    # --- sandbox ---
+    "docker>=7.1",
+
+    # --- ai ---
+    "google-genai>=0.3",
+    "httpx>=0.27",
+
+    # --- observability ---
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "testcontainers[postgres]>=4.8",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["crucible*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC", "S", "RUF"]
+ignore = ["S101", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "N"]
+"alembic/*" = ["ALL"]
+# Seed content: the long lines are starter-code and reference-solution
+# strings. Wrapping them would change the code candidates actually see.
+"crucible/scripts/seed_data.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = []
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# One event loop for the whole session. The async engine is cached
+# (functools.lru_cache), and an asyncpg pool is bound to the loop that created
+# it -- a loop per test means the second test gets "attached to a different
+# loop" from a connection the first test opened.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+# We write function-based tests only. Without this, pytest tries to collect
+# domain classes that happen to start with "Test" (TestCase, TestSession,
+# TestCaseOutcome) and warns on every run.
+python_classes = []
+markers = [
+    "integration: requires postgres/docker",
+    "sandbox: requires a working container runtime",
+]
+
+[tool.coverage.run]
+source = ["crucible"]
+omit = ["*/alembic/*", "*/tests/*"]
