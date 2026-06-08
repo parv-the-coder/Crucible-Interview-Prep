@@ -1,0 +1,36 @@
+# Local development stack.
+#
+#   docker compose -f infra/docker-compose.yml up -d
+#
+# Only Postgres runs here by default. The API and worker run on the
+# host so that a code change is a reload, not a rebuild -- and so the worker
+# can reach the host Docker socket to create sandbox containers.
+
+name: crucible
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: crucible-postgres
+    environment:
+      POSTGRES_USER: crucible
+      POSTGRES_PASSWORD: crucible
+      POSTGRES_DB: crucible
+      # Faster startup; we are not testing locale collation here.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` returns success before the DB accepts writes on first
+      # boot, so we check an actual query instead.
+      test: ["CMD-SHELL", "psql -U crucible -d crucible -c 'SELECT 1' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
