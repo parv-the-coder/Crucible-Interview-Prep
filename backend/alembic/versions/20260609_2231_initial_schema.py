@@ -973,4 +973,23 @@ def downgrade() -> None:
         "ix_users_active_recent", table_name="users", postgresql_where=sa.text("is_active")
     )
     op.drop_table("users")
+
+    # Dropping a table does not drop the enum types it referenced: sa.Enum()
+    # inside create_table() emits CREATE TYPE, but drop_table() emits no
+    # matching DROP TYPE. Without these, downgrade succeeds and the next
+    # upgrade dies on "type user_role already exists".
+    for enum_name in (
+        "violation_kind",
+        "violation_action",
+        "ai_purpose",
+        "test_case_outcome",
+        "submission_status",
+        "session_status",
+        "room_status",
+        "room_role",
+        "question_type",
+        "difficulty",
+        "user_role",
+    ):
+        op.execute(f"DROP TYPE IF EXISTS {enum_name}")
     # ### end Alembic commands ###
