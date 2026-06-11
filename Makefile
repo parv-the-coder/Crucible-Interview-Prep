@@ -6,7 +6,7 @@ PY      := .venv/bin/python
 VENV    := .venv/bin
 
 .DEFAULT_GOAL := help
-.PHONY: help up down restart logs ps api migrate revision lint fmt clean
+.PHONY: help up down restart logs ps api migrate revision seed reseed lint fmt clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -43,6 +43,12 @@ migrate:  ## Apply migrations
 
 revision:  ## Generate a migration: make revision m="add x"
 	cd backend && PYTHONPATH=. ../$(VENV)/alembic revision --autogenerate -m "$(m)"
+
+seed:  ## Load demo users and the question bank
+	cd backend && PYTHONPATH=. ../$(PY) -m crucible.scripts.seed
+
+reseed:  ## Wipe and reload all data
+	cd backend && PYTHONPATH=. ../$(PY) -m crucible.scripts.seed --reset
 
 # ---------------------------------------------------------------- code style --
 
