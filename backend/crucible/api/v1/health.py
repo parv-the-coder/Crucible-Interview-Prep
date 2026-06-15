@@ -7,6 +7,7 @@ them produces restart loops during a database blip.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -33,6 +34,28 @@ async def _check_database() -> dict[str, Any]:
         return {"ok": False, "error": str(exc)[:200]}
 
 
+async def _check_sandbox() -> dict[str, Any]:
+    """Report what isolation is actually in force.
+
+    A deployment running the insecure fallback must not be able to look
+    healthy. This is the line that makes that visible.
+    """
+    try:
+        from crucible.evaluation.sandbox import get_sandbox
+
+        sandbox = await asyncio.to_thread(get_sandbox)
+        caps = sandbox.capabilities
+        healthy = await asyncio.to_thread(sandbox.healthy)
+        return {
+            "ok": healthy,
+            "backend": caps.name,
+            "production_safe": caps.production_safe,
+            "warnings": caps.notes if not caps.production_safe else [],
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+
+
 @router.get("/health/live", summary="Liveness probe")
 async def live() -> dict[str, str]:
     """Is the process running? Nothing else. Never touches a dependency."""
@@ -41,11 +64,12 @@ async def live() -> dict[str, str]:
 
 @router.get("/health/ready", response_model=Health, summary="Readiness probe")
 async def ready(response: Response) -> Health:
-    db_check = await _check_database()
-    checks = {"database": db_check}
+    db_check, sandbox_check = await asyncio.gather(_check_database(), _check_sandbox())
+    checks = {"database": db_check, "sandbox": sandbox_check}
 
-    # Postgres being down means we can neither accept work nor run it, since
-    # the queue lives there too.
+    # The sandbox being insecure is a warning, not an outage: the platform
+    # still serves. Postgres being down means we can neither accept work nor
+    # run it, since the queue lives there too.
     ready_now = bool(db_check["ok"])
     if not ready_now:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
