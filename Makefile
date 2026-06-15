@@ -6,7 +6,8 @@ PY      := .venv/bin/python
 VENV    := .venv/bin
 
 .DEFAULT_GOAL := help
-.PHONY: help up down restart logs ps api migrate revision seed reseed lint fmt clean
+.PHONY: help up down restart logs ps api migrate revision seed reseed lint fmt \
+        images reap clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -27,6 +28,8 @@ restart: down up  ## Restart the datastores
 
 ps:  ## What is running
 	@$(COMPOSE) ps --format 'table {{.Name}}\t{{.Status}}'
+	@echo "--- sandbox containers ---"
+	@docker ps --filter label=crucible.sandbox=1 --format 'table {{.Names}}\t{{.Status}}' | tail -n +1
 
 logs:  ## Tail datastore logs
 	$(COMPOSE) logs -f --tail=50
@@ -59,6 +62,18 @@ lint:  ## Check formatting and lint
 fmt:  ## Auto-fix formatting and lint
 	cd backend && ../$(VENV)/ruff check --fix crucible tests
 	cd backend && ../$(VENV)/ruff format crucible tests
+
+# ------------------------------------------------------------------- sandbox --
+
+images:  ## Pre-pull the language images (do this once)
+	docker pull python:3.12-alpine
+	docker pull node:20-alpine
+	docker pull gcc:13
+	@echo "pulled. gcc is ~2GB; skip it with SANDBOX_ENABLED_LANGUAGES=python,javascript"
+
+reap:  ## Destroy orphaned sandbox containers left by a crashed worker
+	@docker ps -aq --filter label=crucible.sandbox=1 | xargs -r docker rm -f
+	@echo "orphaned sandbox containers removed"
 
 # ------------------------------------------------------------------- cleanup --
 
