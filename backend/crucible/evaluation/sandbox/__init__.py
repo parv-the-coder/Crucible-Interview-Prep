@@ -36,6 +36,29 @@ def build_sandbox(backend: str | None = None) -> SandboxBackend:
     """Construct a backend without touching the process-wide singleton."""
     name = (backend or settings.sandbox_backend).lower()
 
+    if name == "docker":
+        from crucible.evaluation.sandbox.docker_backend import (
+            DockerSandbox,
+            DockerUnavailableError,
+        )
+
+        try:
+            return DockerSandbox()
+        except DockerUnavailableError as exc:
+            # Falling back silently in production would turn "Docker is down"
+            # into "we are now running untrusted code unconfined", which is a
+            # far worse failure than an outage.
+            if settings.environment not in ("local", "test"):
+                raise
+            log.error(
+                "sandbox.docker_unavailable_falling_back",
+                error=str(exc),
+                consequence="using the INSECURE subprocess backend (local only)",
+            )
+            from crucible.evaluation.sandbox.subprocess_backend import SubprocessSandbox
+
+            return SubprocessSandbox()
+
     if name == "subprocess":
         from crucible.evaluation.sandbox.subprocess_backend import SubprocessSandbox
 
