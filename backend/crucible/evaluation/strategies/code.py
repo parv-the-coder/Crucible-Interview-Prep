@@ -59,9 +59,8 @@ class CodeStrategy(EvaluationStrategy):
         total_ms = 0
         peak_kb = 0
         compile_output = ""
-        compile_failed = False
 
-        for case in cases:
+        for index, case in enumerate(cases):
             run = self._sandbox.execute(
                 ExecutionRequest(
                     language=ctx.language,
@@ -103,11 +102,20 @@ class CodeStrategy(EvaluationStrategy):
             )
 
             if outcome is TestCaseOutcome.COMPILE_ERROR:
+                # The source does not build. Running the remaining cases would
+                # burn sandbox capacity to produce identical errors.
                 compile_output = run.stderr
-                compile_failed = True
-
-        if compile_failed:
-            earned = 0.0
+                for remaining in cases[index + 1 :]:
+                    results.append(
+                        CaseResult(
+                            ordinal=remaining.ordinal,
+                            test_case_id=remaining.id,
+                            outcome=TestCaseOutcome.COMPILE_ERROR,
+                            is_visible=False,
+                        )
+                    )
+                earned = 0.0
+                break
 
         score = round(100.0 * earned / total_weight, 2)
         return EvaluationResult(

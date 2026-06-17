@@ -107,6 +107,18 @@ def test_code_sample_case_output_is_returned(sandbox) -> None:
     assert "visible" in result.cases[0].stdout
 
 
+def test_code_compile_error_short_circuits_remaining_cases(sandbox) -> None:
+    """A file that does not parse must not run 20 times to say so 20 times."""
+    strategy = build_strategy("code", sandbox=sandbox)
+    cases = tuple(case(i, "", str(i)) for i in range(5))
+    result = strategy.evaluate(ctx(source_code="def broken(:\n  pass", test_cases=cases))
+    assert result.score == 0.0
+    assert result.cases_total == 5
+    assert all(c.outcome is TestCaseOutcome.COMPILE_ERROR for c in result.cases)
+    # Only the first case actually executed.
+    assert sum(1 for c in result.cases if c.execution_ms > 0) == 1
+
+
 def test_code_timeout_is_not_reported_as_a_wrong_answer(sandbox) -> None:
     strategy = build_strategy("code", sandbox=sandbox)
     result = strategy.evaluate(
