@@ -11,11 +11,16 @@ from crucible.evaluation.strategies.base import (
     EvaluationStrategy,
 )
 
-# Sandbox outcome -> per-case outcome.
+# Sandbox outcome -> per-case outcome. Explicit rather than a fallthrough so a
+# newly added sandbox outcome shows up in review instead of silently becoming
+# "wrong answer" in production.
 _OUTCOME_MAP = {
     ExecOutcome.TIMEOUT: TestCaseOutcome.TIMEOUT,
+    ExecOutcome.MEMORY_EXCEEDED: TestCaseOutcome.MEMORY_EXCEEDED,
     ExecOutcome.RUNTIME_ERROR: TestCaseOutcome.RUNTIME_ERROR,
     ExecOutcome.COMPILE_ERROR: TestCaseOutcome.COMPILE_ERROR,
+    ExecOutcome.OUTPUT_TRUNCATED: TestCaseOutcome.OUTPUT_TRUNCATED,
+    ExecOutcome.INTERNAL_ERROR: TestCaseOutcome.INTERNAL_ERROR,
 }
 
 
@@ -78,7 +83,7 @@ class CodeStrategy(EvaluationStrategy):
                 else:
                     outcome = TestCaseOutcome.WRONG_ANSWER
             else:
-                outcome = _OUTCOME_MAP.get(run.outcome, TestCaseOutcome.WRONG_ANSWER)
+                outcome = _OUTCOME_MAP.get(run.outcome, TestCaseOutcome.INTERNAL_ERROR)
 
             visible = case.is_sample
             results.append(
