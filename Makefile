@@ -6,7 +6,8 @@ PY      := .venv/bin/python
 VENV    := .venv/bin
 
 .DEFAULT_GOAL := help
-.PHONY: help up down restart logs ps api migrate revision seed reseed lint fmt \
+.PHONY: help up down restart logs ps api worker migrate revision seed reseed \
+        test test-unit test-integration test-sandbox cov lint fmt check \
         images reap clean
 
 help:  ## Show this help
@@ -39,6 +40,9 @@ logs:  ## Tail datastore logs
 api:  ## Run the API (reloads on change)
 	cd backend && PYTHONPATH=. ../$(VENV)/uvicorn crucible.main:app --reload --port 8000
 
+worker:  ## Run a queue worker (run it more than once for more capacity)
+	cd backend && PYTHONPATH=. ../$(VENV)/python -m crucible.workers.runner
+
 # ------------------------------------------------------------------ database --
 
 migrate:  ## Apply migrations
@@ -53,6 +57,22 @@ seed:  ## Load demo users and the question bank
 reseed:  ## Wipe and reload all data
 	cd backend && PYTHONPATH=. ../$(PY) -m crucible.scripts.seed --reset
 
+# --------------------------------------------------------------------- tests --
+
+test: test-unit test-integration  ## Unit + integration
+
+test-unit:  ## Fast tests, no external dependencies
+	cd backend && PYTHONPATH=. ../$(VENV)/pytest tests/unit -q
+
+test-integration:  ## Needs Postgres
+	cd backend && PYTHONPATH=. ../$(VENV)/pytest -m integration -q
+
+test-sandbox:  ## Real attack cases against real containers (needs Docker)
+	cd backend && PYTHONPATH=. ../$(VENV)/pytest -m sandbox -q
+
+cov:  ## Coverage report
+	cd backend && PYTHONPATH=. ../$(VENV)/pytest tests/unit --cov=crucible --cov-report=term-missing
+
 # ---------------------------------------------------------------- code style --
 
 lint:  ## Check formatting and lint
@@ -62,6 +82,8 @@ lint:  ## Check formatting and lint
 fmt:  ## Auto-fix formatting and lint
 	cd backend && ../$(VENV)/ruff check --fix crucible tests
 	cd backend && ../$(VENV)/ruff format crucible tests
+
+check: lint test-unit  ## What CI runs
 
 # ------------------------------------------------------------------- sandbox --
 
