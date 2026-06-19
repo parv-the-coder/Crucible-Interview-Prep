@@ -196,8 +196,18 @@ def evaluate_submission(submission_id: str, *, worker_id: str = "inline") -> dic
                 )
             )
 
+        graded = not submission.is_dry_run
         score = submission.score
         passed = submission.passed
+
+    if graded and settings.ai_enabled:
+        # A separate transaction, deliberately. The grade above is already
+        # committed and a review failure must not undo it, so it is caught
+        # and logged rather than raised.
+        try:
+            ai_review_submission(submission_id)
+        except Exception as exc:
+            log.warning("ai_review.failed", submission_id=submission_id, error=str(exc))
 
     log.info(
         "submission.completed",
@@ -304,7 +314,16 @@ def close_idle_rooms() -> dict[str, int]:
     return {"closed": len(closed)}
 
 
+def ai_review_submission(submission_id: str) -> dict[str, object]:
+    """Generate AI feedback for a completed submission."""
+    from crucible.services.ai_review import review_submission
+
+    with sync_session_scope() as db:
+        return review_submission(db, uuid.UUID(submission_id))
+
+
 __all__ = [
+    "ai_review_submission",
     "close_idle_rooms",
     "evaluate_submission",
     "expire_sessions",
