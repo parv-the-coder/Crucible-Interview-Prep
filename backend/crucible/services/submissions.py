@@ -246,3 +246,52 @@ async def list_submissions(
         offset=offset,
         has_more=len(rows) > limit,
     )
+
+
+async def request_hint(db: AsyncSession, user: User, payload) -> dict[str, object]:
+    """Generate a hint for a question the user is working on.
+
+    The AI layer is synchronous (the queue worker uses it too), so the
+    call is pushed to a thread rather than blocking the event loop for the
+    seconds an LLM takes.
+    """
+    import anyio
+
+    from crucible.db.session import get_sync_session_factory
+    from crucible.services.ai_review import generate_hint
+
+    question = await db.get(Question, payload.question_id)
+    if question is None or not question.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "question_not_found", "message": "No such question"},
+        )
+
+    def _run() -> dict[str, object] | None:
+        # A separate sync session: the AI client writes to the audit ledger,
+        # and that write belongs to its own short transaction rather than the
+        # request's.
+        with get_sync_session_factory()() as sync_db:
+            sync_question = sync_db.get(Question, payload.question_id)
+            if sync_question is None:
+                return None
+            result = generate_hint(
+                sync_db,
+                question=sync_question,
+                attempt=payload.attempt,
+                language=payload.language,
+                user_id=user.id,
+            )
+            sync_db.commit()
+            return result
+
+    hint = await anyio.to_thread.run_sync(_run)
+    if hint is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "ai_unavailable",
+                "message": "No hint available right now",
+            },
+        )
+    return hint

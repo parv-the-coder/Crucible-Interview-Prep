@@ -81,3 +81,11 @@ class SubmissionAccepted(BaseModel):
     # True when an idempotency key matched an existing submission and no new
     # evaluation was queued.
     deduplicated: bool = False
+
+
+class HintRequest(BaseModel):
+    question_id: uuid.UUID
+    language: str = "python"
+    # What they have written so far. A hint for an empty editor is different
+    # from one for a nearly-working attempt.
+    attempt: str = Field(default="", max_length=50_000)

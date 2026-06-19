@@ -9,6 +9,7 @@ from crucible.api.deps import CurrentUser, DbSession, get_idempotency_key
 from crucible.evaluation.sandbox import supported_languages
 from crucible.schemas.common import Page
 from crucible.schemas.submission import (
+    HintRequest,
     SubmissionAccepted,
     SubmissionCreate,
     SubmissionDetail,
@@ -72,3 +73,17 @@ async def get_submission(
     submission_id: uuid.UUID, user: CurrentUser, db: DbSession
 ) -> SubmissionDetail:
     return await service.get_submission(db, user, submission_id)
+
+
+@router.post(
+    "/hint",
+    summary="Ask for a hint",
+    description=(
+        "Returns one nudge toward the idea the candidate is missing, never a "
+        "solution. Counts against the daily AI budget. Returns 503 when no AI "
+        "provider is configured, which callers should treat as 'no hint "
+        "available' rather than an error."
+    ),
+)
+async def get_hint(payload: HintRequest, user: CurrentUser, db: DbSession) -> dict[str, object]:
+    return await service.request_hint(db, user, payload)
