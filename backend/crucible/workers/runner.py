@@ -33,6 +33,7 @@ from crucible.workers.tasks import (
     close_idle_rooms,
     evaluate_submission,
     expire_sessions,
+    reap_stuck_submissions,
 )
 
 log = get_logger(__name__)
@@ -43,6 +44,7 @@ POLL_INTERVAL_SECONDS = 1.0
 # Sweep cadences, in seconds.
 SWEEPS = (
     ("expire_sessions", expire_sessions, 30.0),
+    ("reap_stuck_submissions", reap_stuck_submissions, 60.0),
     ("close_idle_rooms", close_idle_rooms, 120.0),
 )
 
@@ -58,8 +60,8 @@ class Worker:
     def request_stop(self, signum: int, _frame: FrameType | None) -> None:
         """Finish the submission in hand, then exit.
 
-        Killing mid-evaluation costs a candidate a re-run, so a clean signal
-        drains the submission in hand instead.
+        Killing mid-evaluation is survivable -- the reaper requeues the row --
+        but it costs a candidate a re-run, so a clean signal drains instead.
         """
         if self._stopping:  # second signal: the operator means it
             log.warning("worker.force_quit", signal=signum)
@@ -134,7 +136,8 @@ class Worker:
         except Exception as exc:
             # evaluate_submission already marks the row failed for errors it
             # anticipates. Reaching here means something unforeseen, so leave
-            # the row RUNNING rather than guess at its state.
+            # the row RUNNING and let the reaper decide: retry, or abandon once
+            # the attempt budget is spent.
             log.exception("worker.evaluate_crashed", submission_id=str(claimed), error=str(exc))
         return True
 

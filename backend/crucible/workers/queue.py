@@ -11,9 +11,9 @@ different row instead of blocking on the same one, so scaling out is just
 running the process again. The claim is then a conditional UPDATE, which is
 what keeps a claim exactly-once even if two workers race on the same id.
 
-Sweeps (session expiry, idle-room closing) run on a timer inside the same
-process, guarded by a Postgres advisory lock so that N workers still produce
-one sweep rather than N.
+Sweeps (session expiry, the stuck-job reaper, idle-room closing) run on a timer
+inside the same process, guarded by a Postgres advisory lock so that N workers
+still produce one sweep rather than N.
 """
 
 from __future__ import annotations
@@ -50,7 +50,8 @@ def claim_next_submission(db: Session, worker_id: str) -> uuid.UUID | None:
         return None
 
     # Conditional UPDATE rather than a plain write: the row lock above is
-    # released at commit, so the status check is what keeps the claim safe.
+    # released at commit, so this is what makes a claim safe against a
+    # re-delivery or a reaper requeue racing the same id.
     claimed = db.execute(
         update(Submission)
         .where(Submission.id == candidate, Submission.status == SubmissionStatus.QUEUED)

@@ -42,6 +42,9 @@ log = get_logger(__name__)
 def evaluate_submission(submission_id: str, *, worker_id: str = "inline") -> dict[str, object]:
     """Grade one submission.
 
+    Safe to run more than once for the same id: the reaper can requeue a row
+    whose worker died mid-run, so this must be idempotent.
+
     The runner claims a row before calling this (see workers/queue.py), so the
     normal path here is a verification, not a claim. Re-claiming would
     double-count `attempt` and burn the retry budget twice per run.
@@ -79,7 +82,7 @@ def evaluate_submission(submission_id: str, *, worker_id: str = "inline") -> dic
             db.refresh(submission)
 
         elif submission.status is not SubmissionStatus.RUNNING or submission.worker_id != worker_id:
-            # Already finished.
+            # Already finished, or the reaper handed it to someone else.
             log.info(
                 "submission.claim_skipped",
                 submission_id=submission_id,
@@ -223,6 +226,46 @@ def _fail(db, submission: Submission | None, message: str) -> None:
 # --------------------------------------------------------------- sweepers ---
 
 
+def reap_stuck_submissions() -> dict[str, int]:
+    """Requeue submissions whose worker died mid-evaluation.
+
+    task_reject_on_worker_lost handles a clean loss, but a worker that is
+    OOM-killed or whose host disappears leaves rows in RUNNING forever. This is
+    the backstop, and it is why submissions carry started_at and attempt.
+    """
+    cutoff = datetime.now(UTC) - timedelta(seconds=settings.sandbox_timeout_seconds * 10 + 180)
+    requeued = 0
+    abandoned = 0
+
+    with sync_session_scope() as db:
+        stuck = (
+            db.execute(
+                select(Submission).where(
+                    Submission.status == SubmissionStatus.RUNNING,
+                    Submission.started_at < cutoff,
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for submission in stuck:
+            if submission.attempt >= settings.submission_max_attempts:
+                _fail(db, submission, "Abandoned: exceeded retry budget after worker loss")
+                abandoned += 1
+            else:
+                submission.status = SubmissionStatus.QUEUED
+                submission.worker_id = None
+                submission.started_at = None
+                requeued += 1
+
+    # No re-enqueue call: setting status back to QUEUED *is* the enqueue, and
+    # the next worker poll picks the row up.
+
+    if requeued or abandoned:
+        log.warning("submissions.reaped", requeued=requeued, abandoned=abandoned)
+    return {"requeued": requeued, "abandoned": abandoned}
+
+
 def expire_sessions() -> dict[str, int]:
     """Close timed sessions past their deadline.
 
@@ -265,4 +308,5 @@ __all__ = [
     "close_idle_rooms",
     "evaluate_submission",
     "expire_sessions",
+    "reap_stuck_submissions",
 ]
