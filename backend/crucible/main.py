@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from crucible.api.errors import register_exception_handlers
 from crucible.api.middleware import RequestContextMiddleware
-from crucible.api.v1 import auth, health, questions, submissions
+from crucible.api.v1 import auth, health, questions, sessions, submissions
 from crucible.core.config import settings
 from crucible.core.logging import configure_logging, get_logger
 
@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router, prefix=settings.api_v1_prefix)
     app.include_router(questions.router, prefix=settings.api_v1_prefix)
+    app.include_router(sessions.router, prefix=settings.api_v1_prefix)
     app.include_router(submissions.router, prefix=settings.api_v1_prefix)
 
     @app.get("/", include_in_schema=False)
