@@ -209,6 +209,17 @@ async def start_session(db: AsyncSession, user: User, payload: SessionCreate) ->
 
 
 async def _pick_questions(db: AsyncSession, user: User, payload: SessionCreate) -> list[Question]:
+    if payload.adaptive:
+        from crucible.services.adaptive import pick_questions
+
+        return await pick_questions(
+            db,
+            user,
+            topics=payload.topics or None,
+            count=payload.question_count,
+            question_types=[t.value for t in payload.question_types] or None,
+        )
+
     stmt = select(Question).where(Question.is_active.is_(True))
     if payload.topics:
         stmt = stmt.where(Question.topic.in_(payload.topics))
