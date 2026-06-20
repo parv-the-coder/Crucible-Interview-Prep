@@ -8,7 +8,7 @@ VENV    := .venv/bin
 .DEFAULT_GOAL := help
 .PHONY: help up down restart logs ps api worker migrate revision seed reseed \
         test test-unit test-integration test-sandbox cov lint fmt check \
-        images reap clean
+        images reap doctor nuke clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -97,8 +97,21 @@ reap:  ## Destroy orphaned sandbox containers left by a crashed worker
 	@docker ps -aq --filter label=crucible.sandbox=1 | xargs -r docker rm -f
 	@echo "orphaned sandbox containers removed"
 
+doctor:  ## Diagnose a broken local setup
+	@echo "docker group   : $$(id -nG | grep -qw docker && echo 'yes' || echo 'NO — log out and back in')"
+	@echo "docker daemon  : $$(docker info >/dev/null 2>&1 && echo reachable || echo UNREACHABLE)"
+	@echo "datastores     : $$($(COMPOSE) ps --format '{{.Name}}={{.Health}}' | tr '\n' ' ')"
+	@echo "api            : $$(curl -s --max-time 2 localhost:8000/health/live >/dev/null && echo up || echo down)"
+	@echo "queue depth    : $$(docker exec crucible-postgres psql -U crucible -d crucible -tAc "select count(*) from submissions where status='queued'" 2>/dev/null || echo n/a)"
+	@echo "orphan sandbox : $$(docker ps -q --filter label=crucible.sandbox=1 | wc -l)"
+
 # ------------------------------------------------------------------- cleanup --
 
 clean:  ## Remove caches and build artefacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 	rm -rf backend/.pytest_cache backend/.ruff_cache backend/.mypy_cache backend/htmlcov
+
+nuke:  ## Delete containers AND data volumes. Destructive.
+	$(COMPOSE) down -v
+	@docker ps -aq --filter label=crucible.sandbox=1 | xargs -r docker rm -f
+	@echo "all containers and volumes removed. Run: make up migrate seed"
