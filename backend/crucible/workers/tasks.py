@@ -197,13 +197,20 @@ def evaluate_submission(submission_id: str, *, worker_id: str = "inline") -> dic
             )
 
         graded = not submission.is_dry_run
-        score = submission.score
+        user_id = submission.user_id
+        question_id = submission.question_id
         passed = submission.passed
+        score = submission.score
+
+    # Separate transactions, deliberately. The grade above is already
+    # committed; neither of these may be able to undo it, so each failure
+    # is caught and logged rather than raised.
+    try:
+        update_ratings(str(user_id), str(question_id), passed, score)
+    except Exception as exc:
+        log.warning("ratings.update_failed", submission_id=submission_id, error=str(exc))
 
     if graded and settings.ai_enabled:
-        # A separate transaction, deliberately. The grade above is already
-        # committed and a review failure must not undo it, so it is caught
-        # and logged rather than raised.
         try:
             ai_review_submission(submission_id)
         except Exception as exc:
@@ -314,6 +321,16 @@ def close_idle_rooms() -> dict[str, int]:
     return {"closed": len(closed)}
 
 
+def update_ratings(user_id: str, question_id: str, passed: bool, score: float) -> dict[str, float]:
+    """Update Elo ratings and topic mastery after a graded submission."""
+    from crucible.services.adaptive import apply_submission_outcome
+
+    with sync_session_scope() as db:
+        return apply_submission_outcome(
+            db, uuid.UUID(user_id), uuid.UUID(question_id), passed=passed, score=score
+        )
+
+
 def ai_review_submission(submission_id: str) -> dict[str, object]:
     """Generate AI feedback for a completed submission."""
     from crucible.services.ai_review import review_submission
@@ -328,4 +345,5 @@ __all__ = [
     "evaluate_submission",
     "expire_sessions",
     "reap_stuck_submissions",
+    "update_ratings",
 ]
