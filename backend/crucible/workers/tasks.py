@@ -202,19 +202,20 @@ def evaluate_submission(submission_id: str, *, worker_id: str = "inline") -> dic
         passed = submission.passed
         score = submission.score
 
-    # Separate transactions, deliberately. The grade above is already
-    # committed; neither of these may be able to undo it, so each failure
-    # is caught and logged rather than raised.
-    try:
-        update_ratings(str(user_id), str(question_id), passed, score)
-    except Exception as exc:
-        log.warning("ratings.update_failed", submission_id=submission_id, error=str(exc))
-
-    if graded and settings.ai_enabled:
+    if graded:
+        # Separate transactions, deliberately. The grade above is already
+        # committed; neither of these may be able to undo it, so each failure
+        # is caught and logged rather than raised.
         try:
-            ai_review_submission(submission_id)
+            update_ratings(str(user_id), str(question_id), passed, score)
         except Exception as exc:
-            log.warning("ai_review.failed", submission_id=submission_id, error=str(exc))
+            log.warning("ratings.update_failed", submission_id=submission_id, error=str(exc))
+
+        if settings.ai_enabled:
+            try:
+                ai_review_submission(submission_id)
+            except Exception as exc:
+                log.warning("ai_review.failed", submission_id=submission_id, error=str(exc))
 
     log.info(
         "submission.completed",
