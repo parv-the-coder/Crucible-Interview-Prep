@@ -33,6 +33,5 @@ frontend/dist/
 .idea/
 .DS_Store
 
-# --- local-only notes ---
-docs/
-Crucible-Prep_FULL.md
+# --- interview prep, local only ---
+prep/
